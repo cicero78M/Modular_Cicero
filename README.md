@@ -36,6 +36,7 @@ Cicero_V2/
 ├── package.json                 # NPM configuration
 ├── src/
 │   ├── config/                  # Environment and Redis config
+│   ├── core/                    # Core architecture (ServiceContainer, HealthCheck, etc.)
 │   ├── db/                      # Database adapters
 │   ├── controller/              # Express controllers
 │   ├── model/                   # Database models
@@ -47,8 +48,10 @@ Cicero_V2/
 │   ├── routes/                  # Express routers
 │   ├── middleware/              # Global middleware
 │   └── data/                    # Static datasets (e.g. satker mappings)
+├── docs/                        # Documentation files
+├── scripts/                     # Utility and diagnostic scripts
+├── sql/                         # Database schema and migrations
 ├── laphar/                      # Legacy recap artefacts kept for reference
-├── pegiat_medsos_apps/          # Android client (embedded reference copy)
 └── tests/                       # Jest tests
 ```
 
