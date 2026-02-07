@@ -9,81 +9,27 @@ import authRoutes from './src/routes/authRoutes.js';
 import passwordResetAliasRoutes from './src/routes/passwordResetAliasRoutes.js';
 import claimRoutes from './src/routes/claimRoutes.js';
 import waHealthRoutes from './src/routes/waHealthRoutes.js';
+import statusRoutes from './src/routes/statusRoutes.js';
 import { notFound, errorHandler } from './src/middleware/errorHandler.js';
 import { authRequired } from './src/middleware/authMiddleware.js';
 import { dedupRequest } from './src/middleware/dedupRequestMiddleware.js';
 import { sensitivePathGuard } from './src/middleware/sensitivePathGuard.js';
-import cronManifest from './src/cron/cronManifest.js';
-import { registerDirRequestCrons } from './src/cron/dirRequest/index.js';
-import { waClient, waGatewayClient } from './src/service/waService.js';
-import { initTelegramBot } from './src/service/telegramService.js';
-import { startOtpWorker } from './src/service/otpQueue.js';
+import { maintenanceMode } from './src/middleware/maintenanceMode.js';
+import { initializeServices } from './src/core/Bootstrap.js';
 
-const cronBuckets = cronManifest.reduce((buckets, { bucket, modulePath }) => {
-  if (!bucket || !modulePath) return buckets;
-  if (!buckets[bucket]) buckets[bucket] = [];
+console.log('='.repeat(60));
+console.log('Cicero V2 - Modular Architecture');
+console.log('='.repeat(60));
 
-  if (!buckets[bucket].includes(modulePath)) {
-    buckets[bucket].push(modulePath);
-  }
-
-  return buckets;
-}, { always: [] });
-
-const loadedCronModules = new Set();
-
-async function loadCronModules(modules = []) {
-  const pendingModules = modules.filter(modulePath => !loadedCronModules.has(modulePath));
-  if (!pendingModules.length) return false;
-
-  await Promise.all(pendingModules.map(async modulePath => {
-    await import(modulePath);
-    loadedCronModules.add(modulePath);
-    console.log(`[CRON] Activated ${modulePath}`);
-  }));
-
-  return true;
+// Initialize all services with modular architecture
+try {
+  await initializeServices();
+  console.log('[App] ✓ Service initialization complete');
+} catch (error) {
+  console.error('[App] ✗ Service initialization failed:', error);
+  console.error('[App] Some services may not be available');
+  // Continue startup - let circuit breakers handle failing services
 }
-
-function logBucketStatus(label, activated) {
-  const status = activated ? 'activated' : 'already active';
-  console.log(`[CRON] ${label} cron bucket ${status}`);
-}
-
-function scheduleCronBucket(client, bucketKey, label) {
-  const modules = cronBuckets[bucketKey] || [];
-  if (!modules.length) return;
-
-  const activateBucket = () =>
-    loadCronModules(modules)
-      .then(activated => logBucketStatus(label, activated))
-      .catch(err => console.error(`[CRON] Failed to activate ${label} cron bucket`, err));
-
-  client.on('ready', () => {
-    console.log(`[CRON] ${label} client ready event`);
-    activateBucket();
-  });
-
-  client
-    .waitForWaReady()
-    .then(() => {
-      console.log(`[CRON] ${label} client ready`);
-      return activateBucket();
-    })
-    .catch(err => console.error(`[CRON] Error waiting for ${label} readiness`, err));
-}
-
-loadCronModules(cronBuckets.always)
-  .then(activated => logBucketStatus('Always', activated))
-  .catch(err => console.error('[CRON] Failed to activate always cron bucket', err));
-
-scheduleCronBucket(waClient, 'waClient', 'WA client');
-registerDirRequestCrons(waGatewayClient);
-
-// Initialize Telegram bot
-initTelegramBot();
-
-startOtpWorker().catch(err => console.error('[OTP] worker error', err));
 
 const app = express();
 app.disable('etag');
@@ -96,11 +42,15 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan('dev'));
+app.use(maintenanceMode); // Check maintenance mode
 app.use(dedupRequest);
 app.use(sensitivePathGuard);
 
 app.all('/', (req, res) => res.status(200).json({ status: 'ok' }));
 app.all('/_next/dev/', (req, res) => res.status(200).json({ status: 'ok' }));
+
+// ===== STATUS & HEALTH ROUTES (PUBLIC) =====
+app.use('/api', statusRoutes);
 
 // ===== ROUTE LOGIN (TANPA TOKEN) =====
 app.use('/api/auth', authRoutes);
@@ -116,4 +66,23 @@ app.use(notFound);
 app.use(errorHandler);
 
 const PORT = env.PORT;
-app.listen(PORT, () => console.log(`Backend server running on port ${PORT}`));
+const server = app.listen(PORT, () => {
+  console.log('='.repeat(60));
+  console.log(`✓ Backend server running on port ${PORT}`);
+  console.log(`✓ Health check: http://localhost:${PORT}/api/health`);
+  console.log(`✓ System status: http://localhost:${PORT}/api/status`);
+  console.log('='.repeat(60));
+});
+
+// Graceful shutdown is handled by ShutdownManager in Bootstrap.js
+// Additional server-specific cleanup
+import { shutdownManager } from './src/core/ShutdownManager.js';
+shutdownManager.register('httpServer', async () => {
+  console.log('[App] Closing HTTP server...');
+  return new Promise((resolve) => {
+    server.close(() => {
+      console.log('[App] HTTP server closed');
+      resolve();
+    });
+  });
+}, 80); // High priority - close server before services
