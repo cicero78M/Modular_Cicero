@@ -20,6 +20,7 @@ This document provides a high level overview of the architecture behind Cicero W
 The backend exposes REST endpoints to manage clients, users, and social media analytics. Key modules include:
 
 - `app.js` – Express entry point registering middleware, routes, and scheduled cron buckets based on WhatsApp readiness.
+- `src/core` – Core architecture components including ServiceContainer, HealthCheck, CircuitBreaker, FeatureFlags, and DatabaseService for modular service management and graceful degradation (see [modular_architecture.md](modular_architecture.md)).
 - `src/controller` – Controller layer for clients, users, OAuth callbacks, dashboard metrics, editorial events, aggregator feeds, premium flows, and social media endpoints.
 - `src/service` – Cron helpers, API wrappers, WhatsApp helpers, OTP/email delivery, Google contact sync, RabbitMQ queues, and various utility functions.
 - `src/handler` – WhatsApp menu logic, link amplification processors, and fetch helpers for automation.
